@@ -45,7 +45,7 @@ Before considering HOG features I had a look at the color spaces. In the course 
 
 For RGB the information in the individual channels seems to be redundant, especially when lookin at the cars and the close area around them. For YCrCB there is more difference between the individual channels. Although the Cr and Cb channel do not seem to be very helpful I calculated the HOG for every channel and included all in my final feature vector as this still improved accuracy slighlty (less than 4%).
 
-The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have choosen the same parameteres as presented in the lecture which are acommon choice.
+The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have choosen the same parameteres as presented in the lecture which are a common choice.
 
 | Parameter | Description | Value |
 | --------- | ----------- | ----- |
@@ -105,7 +105,7 @@ def extractFeatures(fname):
 
 The dataset is alredy pretty balanced with 8792 car images and 8968 non-car images. The other relevant preparation steps happen in the function `prepare_data()` which
 * extracts the feature vector for every image
-* normalizes across all features using `sklearn.preprocessing .StandardScaler`
+* normalizes across all features using `sklearn.preprocessing.StandardScaler`
 * creates the corresponding labels. A car image is assigned the label 1, a non-car image is assigned the label 2
 
 ```
@@ -185,49 +185,128 @@ and yields an accuracy of 0.993 on the test set.
 
 ## Sliding Window Search
 
-##### Describe how (and identify where in your code) you implemented a sliding window search. How did you decide what scales to search and how much to overlap windows?
+_Answering rubric points:_ 
+* _Describe how (and identify where in your code) you implemented a sliding window search. How did you decide what scales to search and how much to overlap windows?_
+* _Show some examples of test images to demonstrate how your pipeline is working. How did you optimize the performance of your classifier?_
 
-The sliding window search is implemented in find_cars
+In order to implement sliding window search I reused the `slide_window` and `draw_boxes` function from the course.
+I did not slide windows across the whole image, but only after the region of interest (which I made dependent on the scale).
 
-##### Show some examples of test images to demonstrate how your pipeline is working. How did you optimize the performance of your classifier?
+<img src="writeup_images/roi.png" style="width: 800px" />
 
-I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
+The following lines slide with zero overlpa a window with a size of (128, 128) over the region of interest and then draw the windows on the image:
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+```
+windows = slide_window(image_RGB_roi, x_start_stop=[0, w], y_start_stop=[350, 670], 
+                    xy_window=(128, 128), xy_overlap=(0, 0))
+                       
+image_RGB_roi = draw_boxes(image_RGB_roi, windows, color=(0, 0, 255), thick=6) 
+```
 
-# REST
-![alt text][image2]
+The result of this is 
 
-####2. Explain how you settled on your final choice of HOG parameters.
+<img src="writeup_images/roi-windows.png" style="width: 800px" />
 
-I tried various combinations of parameters and...
+The final approach taken on the sliding window search is slightly different from an implementation perspective and based on the section *Hog Sub-sampling Window Search* from the lecture. Instead of using an overlap we define how many cells we move to the right and to the bottom for getting the next window. 
+Once we have the window position, we extract the HOG features for, spatial binning and color histogram for the patch. This is combined in a feature vector and fed to the classifier. In case of a car prediction we create a bounding box and it to the result list.
 
-####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
+```
+# Define a single function that can extract features using hog sub-sampling and make predictions
+def find_cars(image_RGB, ystart, ystop, scale, svc, scaler):
+    
+    box_list = []
 
-I trained a linear SVM using...
+    img_tosearch = image_RGB[ystart:ystop,:,:]
+    ctrans_tosearch = convert_color(img_tosearch, conv='RGB2YCrCb')
+    if scale != 1:
+        imshape = ctrans_tosearch.shape
+        # if the scale is > 1, meaning the windows are bigger, 
+        # then this can be simulated by making, the image smaler but leaving the window as is.
+        ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
 
-### Sliding Window Search
+    # Define blocks and steps as above
+    nxblocks = (ch1.shape[1] // pix_per_cell)-1
+    nyblocks = (ch1.shape[0] // pix_per_cell)-1 
+    nfeat_per_block = orient*cell_per_block**2
+    
+    # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
+    window = 64
+    nblocks_per_window = (window // pix_per_cell)-1 
+    cells_per_step = 2  # Instead of overlap, define how many cells to step
+    nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
+    nysteps = (nyblocks - nblocks_per_window) // cells_per_step
+    
+    # Compute individual channel HOG features for the entire image
+    ch1 = ctrans_tosearch[:,:,0]
+    ch2 = ctrans_tosearch[:,:,1]
+    ch3 = ctrans_tosearch[:,:,2]
+    hog1 = get_hog_features(ch1, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False)
+    hog2 = get_hog_features(ch2, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False)
+    hog3 = get_hog_features(ch3, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False)
+    
+    for xb in range(nxsteps):
+        for yb in range(nysteps):
+            ypos = yb*cells_per_step
+            xpos = xb*cells_per_step
+            
+            # Extract HOG for this patch
+            hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+            xleft = xpos*HOG_PIX_PER_CELL
+            ytop = ypos*HOG_PIX_PER_CELL
+            
+            # Extract the image patch
+            subimg = ctrans_tosearch[ytop:ytop+window, xleft:xleft+window]
+            spatial_features = bin_spatial(subimg, size=SPATIAL_SIZE)
+            hist_features = color_hist(subimg, nbins=HIST_BINS)
+            
+            feature_list = np.hstack((spatial_features, hist_features, hog_features))
 
-####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
+            # Make a prediction on the patch
+            test_features = scaler.transform(feature_list.reshape(1,-1))       
+            test_prediction = svc.predict(test_features)
+            
+            if test_prediction == 1:
+                
+                xbox_left = np.int(xleft*scale)
+                ytop_draw = np.int(ytop*scale)
+                win_draw = np.int(window*scale)
+                
+                box_list.append(((xbox_left, ytop_draw+ystart), (xbox_left+win_draw,ytop_draw+win_draw+ystart)))
+                
+    return box_list
+```
+When running the `find_cars` function on `test4.jpg` (with a scale of 1.5, ystart of 350 and ystop of 670) the result is:
+<img src="writeup_images/find-cars-test-image4.png" style="width: 800px" />
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
+Given the bounding boxes identified by `find_cars` we can create a heatmap. With this we can only consider pixels to belong to a car if we have a certain number of votes for a pixel and the pipeline gets more robust. The heatmap is created using the method `create_heatmap` which simply counts the *votes* and then applies a threshold:
 
-![alt text][image3]
+```
+def create_heatmap(self, image_BGR, bbox_list):
+   heat = np.zeros_like(image_BGR[:,:,0]).astype(np.float)
 
-####2. Show some examples of test images to demonstrate how your pipeline is working. How did you optimize the performance of your classifier?
-
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result. 
+    for box in bbox_list:
+        #print(box)
+        # Add += 1 for all pixels inside each bbox
+        # Assuming each "box" takes the form ((x1, y1), (x2, y2))
+        heat[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        
+    heat = self._apply_threshold(heat)
+    heat = np.clip(heat, 0, 255)
+    return heat
+```
 
 The visualization below shows four images per row:
 * the first image is an original test image
 * the second image shows the bounding boxes of patches classified as car images. Note that this is one particular scale (1.5) and one particular region of interest (pixels where the y value is between 350 and 670)
-* the third image shows only the heatmap, based on the bounding boxes
-* the fourth image shows bounding boxes for cars identified by the pipeline
+* the third image shows only the heatmap, created by the method `create_heatmap`
+* the fourth image shows bounding boxes derived from the heatmap using `scipy.ndimage.measurements.label`.
 
-In row 2 there is one false positive and in row 3 there is one positive. However because no pixel gets enough votes (belonging to a patch classified as car) the pipeline predicts that there is no car in the image. 
 <img src="writeup_images/pipeline-bbox-heatmap.png" style="width: 800px" />
 
-While that already worked quite okay I plaed around with different scales and region of interests
+In row 2 there is one false positive and in row 3 there is one positive. However because no pixel gets enough votes (belonging to a patch classified as car) the pipeline predicts that there is no car in the image. To further improve I played around with different scales and region of interests
 
 | Scale | Y top | Y bottom | 
 | ---- | ------ | -------- |
@@ -297,7 +376,7 @@ _Answering rubric points:_
 * _Provide a link to your final video output. Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)_
 * _Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes._
 
-In the first version I process each frame individually without considering what happend in the frame before. The [project_video_single_frame.mp4](./project_video_single_frame.mp4) is quite okay but a somewhat wobbly.
+In the first version I process each frame individually without considering what happend in the frame before. The [project_video_single_frame.mp4](./project_video_single_frame.mp4) is quite okay but somewhat wobbly.
 Avoiding false positives has been already covered in the sections above. In addition to thresholding of the heatmap for a particular image I created a version which is aware of what happend in the previous frames:
 
 ```
@@ -328,27 +407,12 @@ def image_pipeline_context_aware(image_RGB):
     heat = h.createHeatmap(image_RGB, result)
 ```
 
-The [project_video_sven_four_frames.mp4](./project_video_sven_four_frames.mp4) is less wobbly. 
+When visualizting this one can see that the heatmaps are a little bit smoother.
 
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+<img src="writeup_images/context-aware-pipeline.png" />
 
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
+The [project_video_four_frames.mp4](./project_video_four_frames.mp4) is less wobbly, at least it appeaers so to me &#128513  
 
-Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
-
-### Here are six frames and their corresponding heatmaps:
-
-![alt text][image5]
-
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
-![alt text][image6]
-
-### Here the resulting bounding boxes are drawn onto the last frame in the series:
-![alt text][image7]
-
-
-
----
 
 ###Discussion
 

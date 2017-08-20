@@ -1,9 +1,4 @@
-##Writeup Template
-###You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
-
-**Vehicle Detection Project**
+# Vehicle Detection Project 
 
 The goals / steps of this project are the following:
 
@@ -24,16 +19,11 @@ The goals / steps of this project are the following:
 [image7]: ./examples/output_bboxes.png
 [video1]: ./project_video.mp4
 
-
-carnd-vehicle-detection
-
-
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
-###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
 In this writeup I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
-The implementation can be found in a Jupyter notebook. To run it change to the base folder which contains the `carnd-vehicle-detection.ipynb`. Then run:
+The implementation can be found in the Jupyter notebook `carnd-vehicle-detection.ipynb`. To run it change to the base folder which contains the `carnd-vehicle-detection.ipynb`. Then run:
 
 ```
 > conda env create -f environment.yml
@@ -41,21 +31,21 @@ The implementation can be found in a Jupyter notebook. To run it change to the b
 > jupyter notebook carnd-vehicle-detection.ipynb
 ```
 
-
----
-###Writeup / README
-
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
-
-You're reading it!
-
 ## Histogram of Oriented Gradients (HOG)
 
 _Answering rubric points:_ 
 * _Explain how (and identify where in your code) you extracted HOG features from the training images. Explain how you settled on your final choice of HOG parameters._
 * _Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them)._
 
-The method `get_hog_features` in class `FeatureExtraction` (file `src/feature_extraction.py`) extracts the hog features of a grayscale image. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work.
+Before considering HOG features I had a look at the color spaces. In the course the HOG is based on the grayscale image, but there could be potentially a more suitable color space for that. Based on discussions in our forums I compared RGB and YCrCB:
+
+<img src="writeup_images/color-space-RGB-for-test-image.png" style="width: 800px" />
+
+<img src="writeup_images/color-space-YCrCb-for-test-image.png" style="width: 800px" />
+
+For RGB the information in the individual channels seems to be redundant, especially when lookin at the cars and the close area around them. For YCrCB there is more difference between the individual channels. Although the Cr and Cb channel do not seem to be very helpful I calculated the HOG for every channel and included all in my final feature vector as this still improved accuracy slighlty (less than 4%).
+
+The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have choosen the same parameteres as presented in the lecture which are acommon choice.
 
 | Parameter | Description | Value |
 | --------- | ----------- | ----- |
@@ -63,9 +53,11 @@ The method `get_hog_features` in class `FeatureExtraction` (file `src/feature_ex
 | pixel_per_cell | size (in pixels) of a cell | (8,8) |
 | cell_per_block | number of cells in each block | (2,2) |
 
-In the following image there are 3 images containing a car and 3 non-car images and below every image the respective hog feature visualization is plotted:
+The image below visualizes the HOG feature calculated per channel. As already indicated by the color space anlysis the HOG features for the R, G and B channel look fairly similar while there is more variance for Y, Cr and Cb:
 
-<img src="writeup_images/hog_features.png" style="width: 800px" />
+<img src="writeup_images/hog_RGB.png" style="width: 800px" />
+
+<img src="writeup_images/hog_YCrCb.png" style="width: 800px" />
 
 ```
 def extractFeatures(fname):
@@ -77,73 +69,119 @@ def extractFeatures(fname):
 
 Training the classifier consists of several steps:
 
+#### Choosing features
+
+In the end I decided for the following features:
+* HOG feature for th Y, Cr and Cb channel with 9 orientations, 8 pixels per cell and 2 cells per block
+* spatial binning with a spatial size of (32,32)
+* color histogram with 32 bins
+
+In code this looks like:
+
+```
+def extractFeatures(fname):
+    image_BGR = cv2.imread(fname)
+    image_YCrCb = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2YCrCb)
+    
+    ch1 = image_YCrCb[:,:,0]
+    ch2 = image_YCrCb[:,:,1]
+    ch3 = image_YCrCb[:,:,2]
+    
+    hog1 = get_hog_features(ch1, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False).ravel() 
+    hog2 = get_hog_features(ch2, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False).ravel() 
+    hog3 = get_hog_features(ch3, HOG_ORIENT, HOG_PIX_PER_CELL, HOG_CELL_PER_BLOCK, feature_vec=False).ravel() 
+    hog_features = np.hstack((hog1, hog2, hog3))
+    
+    spatial_features = bin_spatial(image_YCrCb, size=SPATIAL_SIZE)
+
+    hist_features = color_hist(image_YCrCb, nbins=HIST_BINS)
+  
+    features = np.hstack((spatial_features, hist_features, hog_features)).ravel()
+    
+    return features
+```
+
 #### Data preparation
 
-The dataset is alredy pretty balanced with 8792 car images and 8968 non-car images. The other relevant preparation setps happen in the function `prepare_data()`which
+The dataset is alredy pretty balanced with 8792 car images and 8968 non-car images. The other relevant preparation steps happen in the function `prepare_data()` which
 * extracts the feature vector for every image
-* normalizes the feature vector
+* normalizes across all features using `sklearn.preprocessing .StandardScaler`
 * creates the corresponding labels. A car image is assigned the label 1, a non-car image is assigned the label 2
-    ```
-    labels = np.hstack((np.ones(len(car_features)), np.zeros(len(non_car_features))))
-    ``` 
 
-(17760, 8460)
-112.39  seconds to extract HOG features...
+```
+def prepareData():
+
+    # Read all the images with car
+    images_with_car_fname = []
+    subfolders = glob.glob('vehicles/*')
+    for folder in subfolders:
+        images_with_car_fname += glob.glob(folder + '/*.png')            
+    # Read all the images without car
+    images_without_car_fname = []
+    subfolders = glob.glob('non-vehicles/*')
+    for folder in subfolders:
+        images_without_car_fname += glob.glob(folder + '/*.png') 
+    
+    t1=time.time()
+    car_features = []
+    for fname in images_with_car_fname:
+        car_features.append(extractFeatures(fname))
+        
+    non_car_features = []
+    for fname in images_without_car_fname:
+        non_car_features.append(extractFeatures(fname))
+    t2=time.time()
+    
+    # define the labels vector, ordering is cars then non-cars
+    labels = np.hstack((np.ones(len(car_features)), np.zeros(len(non_car_features))))
+    
+    # stack the features together in the same order as the labels
+    # transform to np.float64 which is required by StandardScaler
+    features = np.vstack((car_features, non_car_features)).astype(np.float64)
+    
+    # normalize the features
+    scaler = StandardScaler().fit(features)
+    features = scaler.transform(features)
+                      
+    print(round(t2-t1, 2), ' seconds to extract features...')
+    print("# images with car = ", len(images_with_car_fname))
+    print("# images without car = ", len(images_without_car_fname))
+    print("feature vector length = ", len(car_features[0]))
+    print("# labels = ", len(labels))
+    print("# features = ", len(features))
+    
+    return features, labels, scaler
+```
+
+which will print when called:
+
+```
+109.62  seconds to extract features...
 # images with car =  8792
 # images without car =  8968
 feature vector length =  8460
 # labels =  17760
 # features =  17760
-
-Score:  0.994650900901
-0.99893018018
-
-
-
-
-
-#####  Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
-
-###### Preparing the data
-
-Before training I have to prepare the training data which happens in the function `prepareData`. First I get all the filenames for the images with cars (same for the images without cars):
-```
-images_with_car_fname = []
-subfolders = glob.glob('vehicles/*')
-for folder in subfolders:
-    images_with_car_fname += glob.glob(folder + '/*.png')  
 ```
 
-Then I read the images and extract for every car image the features (same for the images without cars):
+Finally i have to train the classifier which is straight-forward including 
+* shuffling the data to avoid problems due to ordering of the data
+* spliting the data into a training and testing set.
+
 ```
-car_features = []
-for fname in images_with_car_fname:
-    car_features.append(extractFeatures(fname))
+def train(X, y):
+    X, y = shuffle(X, y)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42)
+    
+    clf = LinearSVC(max_iter=20000)
+    clf.fit(X_train, y_train)
+    print("Accuracy on test set: ", clf.score(X_test, y_test))
+    return clf
+
+clf = train(features, labels)
 ```
-
-Then I extract the features using the `extractFeatures` function which was explained in the previous section.
-
-With that data I can construct my data set. The features are the `car_features`and the `non_car_features` stacked vertically:
-```
-features = np.vstack((car_features, non_car_features)).astype(np.float64)
-```
-The labels are created by hand a 1 for every car feature and a 0 for every non car feature:
-```
-labels = np.hstack((np.ones(len(car_features)), np.zeros(len(non_car_features))))
-```
-
-The code for this step is contained in the first code cell of the IPython notebook (or in lines # through # of the file called `some_file.py`).  
-
-I started by reading in all the `vehicle` and `non-vehicle` images.  Here eis an example of one of each of the `vehicle` and `non-vehicle` classes:
-
-###### Fitting the classifier
-
-I used a SVM (a `sklearn.svm.LinearSVC` to be precise) as recommended in the lecture. It is trained in the function `train(X, y)` where X is the list of all car feature vectors and all non car feature vectors and y the corresponding labels. Therefore in the training method I
-
-* shuffle the data to avoid problems due to ordering of the data
-* split the data into a training and testing set.
-
-The accuracy/score of the classifier on the test set is 0.99268018018
+and yields an accuracy of 0.993 on the test set.
 
 ## Sliding Window Search
 

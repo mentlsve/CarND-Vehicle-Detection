@@ -23,7 +23,7 @@ The goals / steps of this project are the following:
 
 In this writeup I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
-The implementation can be found in the Jupyter notebook `carnd-vehicle-detection.ipynb`. To run it change to the base folder which contains the `carnd-vehicle-detection.ipynb`. Then run:
+The implementation can be found in the Jupyter notebook `carnd-vehicle-detection.ipynb`. To run it, change to the base folder which contains the `carnd-vehicle-detection.ipynb`. Then run:
 
 ```
 > conda env create -f environment.yml
@@ -43,9 +43,9 @@ Before considering HOG features I had a look at the color spaces. In the course 
 
 <img src="writeup_images/color-space-YCrCb-for-test-image.png" style="width: 800px" />
 
-For RGB the information in the individual channels seems to be redundant, especially when lookin at the cars and the close area around them. For YCrCB there is more difference between the individual channels. Although the Cr and Cb channel do not seem to be very helpful I calculated the HOG for every channel and included all in my final feature vector as this still improved accuracy slighlty (less than 4%).
+For RGB the information in the individual channels seems to be redundant, especially when looking at the cars and the close area around them. For YCrCB there is more difference between the individual channels. Although the Cr and Cb channel do not seem to be very helpful I calculated the HOG for every channel and included all in my final feature vector as this still improved accuracy slightly (less than 4%).
 
-The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have choosen the same parameteres as presented in the lecture which are a common choice.
+The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have chosen the same parameters as presented in the lecture which are a common choice.
 
 | Parameter | Description | Value |
 | --------- | ----------- | ----- |
@@ -53,19 +53,11 @@ The function `get_hog_features`  extracts the hog features of a single-channel. 
 | pixel_per_cell | size (in pixels) of a cell | (8,8) |
 | cell_per_block | number of cells in each block | (2,2) |
 
-The image below visualizes the HOG feature calculated per channel. As already indicated by the color space anlysis the HOG features for the R, G and B channel look fairly similar while there is more variance for Y, Cr and Cb:
+The image below visualizes the HOG feature calculated per channel. As already indicated by the color space analysis the HOG features for the R, G and B channel look fairly similar while there is more variance for Y, Cr and Cb:
 
 <img src="writeup_images/hog_RGB.png" style="width: 800px" />
 
 <img src="writeup_images/hog_YCrCb.png" style="width: 800px" />
-
-```
-def extractFeatures(fname):
-    image_BGR = cv2.imread(fname)
-    gray = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2GRAY)
-    features, hog_img = get_hog_features(gray, 8, 8, 2 , vis = True)
-    return features
-``` 
 
 Training the classifier consists of several steps:
 
@@ -103,7 +95,7 @@ def extractFeatures(fname):
 
 #### Data preparation
 
-The dataset is alredy pretty balanced with 8792 car images and 8968 non-car images. The other relevant preparation steps happen in the function `prepare_data()` which
+The dataset is already pretty balanced with 8792 car images and 8968 non-car images. The other relevant preparation steps happen in the function `prepare_data()` which
 * extracts the feature vector for every image
 * normalizes across all features using `sklearn.preprocessing.StandardScaler`
 * creates the corresponding labels. A car image is assigned the label 1, a non-car image is assigned the label 2
@@ -164,9 +156,9 @@ feature vector length =  8460
 # features =  17760
 ```
 
-Finally i have to train the classifier which is straight-forward including 
+Finally I have to train the classifier which is straight-forward including 
 * shuffling the data to avoid problems due to ordering of the data
-* spliting the data into a training and testing set.
+* splitting the data into a training and testing set.
 
 ```
 def train(X, y):
@@ -194,7 +186,7 @@ I did not slide windows across the whole image, but only after the region of int
 
 <img src="writeup_images/roi.png" style="width: 800px" />
 
-The following lines slide with zero overlpa a window with a size of (128, 128) over the region of interest and then draw the windows on the image:
+The following lines slide (with zero overlap) a window with a size of (128, 128) over the region of interest and then draw the windows on the image:
 
 ```
 windows = slide_window(image_RGB_roi, x_start_stop=[0, w], y_start_stop=[350, 670], 
@@ -221,7 +213,7 @@ def find_cars(image_RGB, ystart, ystop, scale, svc, scaler):
     if scale != 1:
         imshape = ctrans_tosearch.shape
         # if the scale is > 1, meaning the windows are bigger, 
-        # then this can be simulated by making, the image smaler but leaving the window as is.
+        # then this can be simulated by making, the image smaller but leaving the window as is.
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
 
     # Define blocks and steps as above
@@ -306,7 +298,7 @@ The visualization below shows four images per row:
 
 <img src="writeup_images/pipeline-bbox-heatmap.png" style="width: 800px" />
 
-In row 2 there is one false positive and in row 3 there is one positive. However because no pixel gets enough votes (belonging to a patch classified as car) the pipeline predicts that there is no car in the image. To further improve I played around with different scales and region of interests
+In row 2 there is one false positive and in row 3 there is one positive, however because no pixel gets enough votes (belonging to a patch classified as car) the pipeline predicts that there is no car in the image. To further improve I played around with different scales and region of interests
 
 | Scale | Y top | Y bottom | 
 | ---- | ------ | -------- |
@@ -368,7 +360,6 @@ plt.show()
 will result in the image
 
 <img src="writeup_images/single-image-through-pipeline.png" />
----
 
 ## Video Implementation
 
@@ -407,16 +398,16 @@ def image_pipeline_context_aware(image_RGB):
     heat = h.createHeatmap(image_RGB, result)
 ```
 
-When visualizting this one can see that the heatmaps are a little bit smoother.
+In the visualization the heatmap looks smoother when considering the previous four frames.
 
 <img src="writeup_images/context-aware-pipeline.png" />
 
-The [project_video_four_frames.mp4](./project_video_four_frames.mp4) is less wobbly, at least it appeaers so to me &#128513  
+The [project_video_four_frames.mp4](./project_video_four_frames.mp4) is less wobbly, at least it appeaers so to me 😄. 
 
+## Discussion 
 
-###Discussion
+_Answering rubric points:_ 
+* _Briefly discuss any problems / issues you faced in your implementation of this project. Where will your pipeline likely fail? What could you do to make it more robust?_
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
-
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
-
+The major challenge was the sliding window search. The classifier itself and the feature extraction is pretty straight-forward. The trick with scaling the underlying image instead of scaling the window is very cool, but it took me some time to understand how it works. When using the pipeline which takes into consideration the previous four frames it takes longer to recognize new cars in the image compared to the pipeline which does not do this. I believe that there could be lot of improvements how to leverage the information from the previous frames than just adding them to the list of detections. For example the height and width of the bounding box could be used so that there is a smoother and lower change in bounding box size from one frame to the other. Predicting the next position of another car based on the bounding boxes calculated so far could be another idea to make it more robust.
+Another thing is that the sliding window search is quite compute-intensive which would be a challenge in a real-world scenario.

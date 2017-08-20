@@ -45,7 +45,7 @@ Before considering HOG features I had a look at the color spaces. In the course 
 
 For RGB the information in the individual channels seems to be redundant, especially when looking at the cars and the close area around them. For YCrCB there is more difference between the individual channels. Although the Cr and Cb channel do not seem to be very helpful I calculated the HOG for every channel and included all in my final feature vector as this still improved accuracy slightly (less than 4%).
 
-The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have choosen the same parameteres as presented in the lecture which are a common choice.
+The function `get_hog_features`  extracts the hog features of a single-channel. It is delegating to the `hog()` function of [scikit-image](http://scikit-image.org/docs/dev/api/skimage.feature.html?highlight=feature%20hog#skimage.feature.hog) which does the actual work. I have chosen the same parameters as presented in the lecture which are a common choice.
 
 | Parameter | Description | Value |
 | --------- | ----------- | ----- |
@@ -58,14 +58,6 @@ The image below visualizes the HOG feature calculated per channel. As already in
 <img src="writeup_images/hog_RGB.png" style="width: 800px" />
 
 <img src="writeup_images/hog_YCrCb.png" style="width: 800px" />
-
-```
-def extractFeatures(fname):
-    image_BGR = cv2.imread(fname)
-    gray = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2GRAY)
-    features, hog_img = get_hog_features(gray, 8, 8, 2 , vis = True)
-    return features
-``` 
 
 Training the classifier consists of several steps:
 
@@ -221,7 +213,7 @@ def find_cars(image_RGB, ystart, ystop, scale, svc, scaler):
     if scale != 1:
         imshape = ctrans_tosearch.shape
         # if the scale is > 1, meaning the windows are bigger, 
-        # then this can be simulated by making, the image smaler but leaving the window as is.
+        # then this can be simulated by making, the image smaller but leaving the window as is.
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
 
     # Define blocks and steps as above
@@ -368,7 +360,6 @@ plt.show()
 will result in the image
 
 <img src="writeup_images/single-image-through-pipeline.png" />
----
 
 ## Video Implementation
 
